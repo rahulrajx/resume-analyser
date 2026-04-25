@@ -1,10 +1,13 @@
 import { useState } from 'react';
 
-export default function AnswerEvaluation({ questions }) {
+export default function AnswerEvaluation({ questions: initialQuestions, role, skills }) {
+  const [allQuestions, setAllQuestions] = useState(initialQuestions || []);
   const [answers, setAnswers] = useState({});
   const [evaluations, setEvaluations] = useState({});
   const [loadingId, setLoadingId] = useState(null);
   const [errors, setErrors] = useState({});
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState('');
 
   const handleAnswerChange = (questionId, value) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
@@ -40,7 +43,40 @@ export default function AnswerEvaluation({ questions }) {
     return 'low';
   };
 
-  if (!questions || questions.length === 0) return null;
+  // Session stats
+  const evaluatedCount = Object.keys(evaluations).length;
+  const totalQuestions = allQuestions.length;
+  const allEvaluated = evaluatedCount === totalQuestions && totalQuestions > 0;
+  const avgScore =
+    evaluatedCount > 0
+      ? (
+          Object.values(evaluations).reduce((sum, e) => sum + (e.score || 0), 0) /
+          evaluatedCount
+        ).toFixed(1)
+      : 0;
+
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    setLoadMoreError('');
+
+    try {
+      const { generateFollowupQuestions } = await import('../api');
+      const previousQs = allQuestions.map((q) => q.question);
+      const startId = allQuestions.length + 1;
+
+      const result = await generateFollowupQuestions(role, skills, previousQs, startId);
+
+      if (result.questions) {
+        setAllQuestions((prev) => [...prev, ...result.questions]);
+      }
+    } catch (err) {
+      setLoadMoreError(err.message || 'Failed to load more questions.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  if (!allQuestions || allQuestions.length === 0) return null;
 
   return (
     <div style={{ marginTop: '2rem' }}>
@@ -49,14 +85,36 @@ export default function AnswerEvaluation({ questions }) {
         Write your answers below and get AI-powered feedback with a score and a model answer.
       </p>
 
-      {questions.map((q) => (
+      {/* Session Score Summary */}
+      {evaluatedCount > 0 && (
+        <div className="session-score">
+          <div className="session-score__stat">
+            <span className="session-score__value">{evaluatedCount}/{totalQuestions}</span>
+            <span className="session-score__label">Answered</span>
+          </div>
+          <div className="session-score__divider" />
+          <div className="session-score__stat">
+            <span className={`session-score__value session-score__value--${getScoreClass(parseFloat(avgScore))}`}>
+              {avgScore}
+            </span>
+            <span className="session-score__label">Avg Score</span>
+          </div>
+          <div className="session-score__divider" />
+          <div className="session-score__stat">
+            <span className="session-score__value">{totalQuestions}</span>
+            <span className="session-score__label">Total Qs</span>
+          </div>
+        </div>
+      )}
+
+      {allQuestions.map((q) => (
         <div key={q.id} className="question-card">
           {/* Header */}
           <div className="question-card__header">
             <span className="question-card__number">Question {q.id}</span>
             <div className="question-card__tags">
               <span className="tag tag--category">{q.category}</span>
-              <span className={`tag tag--difficulty-${q.difficulty.toLowerCase()}`}>
+              <span className={`tag tag--difficulty-${q.difficulty.toLowerCase().replace(/\s+/g, '-')}`}>
                 {q.difficulty}
               </span>
             </div>
@@ -135,6 +193,38 @@ export default function AnswerEvaluation({ questions }) {
           )}
         </div>
       ))}
+
+      {/* Load More Questions */}
+      {allEvaluated && (
+        <div className="load-more-section">
+          <div className="load-more-section__divider">
+            <span>Want more practice?</span>
+          </div>
+          {loadMoreError && (
+            <div className="error-message" style={{ marginBottom: '1rem' }}>
+              ⚠️ {loadMoreError}
+            </div>
+          )}
+          <button
+            className="btn btn--primary btn--lg"
+            onClick={handleLoadMore}
+            disabled={loadingMore}
+            id="load-more-btn"
+          >
+            {loadingMore ? (
+              <>
+                <span
+                  className="loader__spinner"
+                  style={{ width: 20, height: 20, borderWidth: 2 }}
+                />
+                Generating More Questions...
+              </>
+            ) : (
+              <>🔥 Load More Questions</>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

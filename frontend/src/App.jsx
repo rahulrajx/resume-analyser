@@ -2,13 +2,11 @@ import { useState } from 'react';
 import './index.css';
 import ResumeUpload from './components/ResumeUpload';
 import ResumeAnalysis from './components/ResumeAnalysis';
-import InterviewPrep from './components/InterviewPrep';
 import AnswerEvaluation from './components/AnswerEvaluation';
 
 const STEPS = [
   { id: 1, label: 'Upload Resume' },
-  { id: 2, label: 'Interview Prep' },
-  { id: 3, label: 'Evaluation' },
+  { id: 2, label: 'Interview' },
 ];
 
 export default function App() {
@@ -21,28 +19,35 @@ export default function App() {
 
   // Interview state
   const [questions, setQuestions] = useState(null);
-  const [selectedRole, setSelectedRole] = useState('');
+  const [generatingQuestions, setGeneratingQuestions] = useState(false);
 
   const handleAnalysisComplete = (result) => {
     setAnalysisResult(result.analysis);
     setResumeText(result.resume_text);
   };
 
-  const handleQuestionsGenerated = (qs, role) => {
-    setQuestions(qs);
-    setSelectedRole(role);
-    setStep(3);
+  const handleStartInterview = async () => {
+    const skills = analysisResult?.skills_found || [];
+    if (skills.length === 0) return;
+
+    setGeneratingQuestions(true);
+
+    try {
+      const { generateSkillQuestions } = await import('./api');
+      const resumeSummary = analysisResult?.summary || resumeText;
+      const result = await generateSkillQuestions(skills, resumeSummary);
+      setQuestions(result.questions);
+      setStep(2);
+    } catch (err) {
+      alert(err.message || 'Failed to generate questions. Please try again.');
+    } finally {
+      setGeneratingQuestions(false);
+    }
   };
 
   const goToStep = (targetStep) => {
-    // Only allow going to completed or current step
     if (targetStep === 1) setStep(1);
-    if (targetStep === 2 && analysisResult) setStep(2);
-    if (targetStep === 3 && questions) setStep(3);
-  };
-
-  const handleProceedToInterview = () => {
-    setStep(2);
+    if (targetStep === 2 && questions) setStep(2);
   };
 
   const handleStartOver = () => {
@@ -50,8 +55,11 @@ export default function App() {
     setAnalysisResult(null);
     setResumeText('');
     setQuestions(null);
-    setSelectedRole('');
   };
+
+  // Skills label for interview header
+  const skillsLabel = analysisResult?.skills_found?.slice(0, 4).join(', ') +
+    (analysisResult?.skills_found?.length > 4 ? ` +${analysisResult.skills_found.length - 4} more` : '');
 
   return (
     <div className="app">
@@ -72,27 +80,20 @@ export default function App() {
               className={`stepper__step ${
                 step === s.id ? 'stepper__step--active' : ''
               } ${
-                (s.id === 1 && analysisResult) ||
-                (s.id === 2 && questions)
-                  ? 'stepper__step--completed'
-                  : ''
+                (s.id === 1 && analysisResult) ? 'stepper__step--completed' : ''
               }`}
               onClick={() => goToStep(s.id)}
               style={{ cursor: 'pointer' }}
             >
               <span className="stepper__number">
-                {((s.id === 1 && analysisResult) || (s.id === 2 && questions))
-                  ? '✓'
-                  : s.id}
+                {(s.id === 1 && analysisResult) ? '✓' : s.id}
               </span>
               {s.label}
             </div>
             {index < STEPS.length - 1 && (
               <div
                 className={`stepper__connector ${
-                  (index === 0 && analysisResult) || (index === 1 && questions)
-                    ? 'stepper__connector--completed'
-                    : ''
+                  (index === 0 && analysisResult) ? 'stepper__connector--completed' : ''
                 }`}
               />
             )}
@@ -117,10 +118,18 @@ export default function App() {
               <div style={{ textAlign: 'center', marginTop: '2rem' }}>
                 <button
                   className="btn btn--primary btn--lg"
-                  onClick={handleProceedToInterview}
-                  id="proceed-to-interview-btn"
+                  onClick={handleStartInterview}
+                  disabled={generatingQuestions || !analysisResult?.skills_found?.length}
+                  id="start-interview-btn"
                 >
-                  🎤 Proceed to Interview Prep →
+                  {generatingQuestions ? (
+                    <>
+                      <span className="loader__spinner" style={{ width: 20, height: 20, borderWidth: 2 }} />
+                      Generating Questions from Your Skills...
+                    </>
+                  ) : (
+                    <>🎤 Start Interview Prep →</>
+                  )}
                 </button>
               </div>
             </>
@@ -128,28 +137,17 @@ export default function App() {
         </>
       )}
 
-      {/* Step 2: Interview Prep */}
+      {/* Step 2: Answer & Evaluate */}
       {step === 2 && (
-        <InterviewPrep
-          resumeSummary={analysisResult?.summary || resumeText}
-          onQuestionsGenerated={handleQuestionsGenerated}
-          isLoading={isLoading}
-          setIsLoading={setIsLoading}
-          questions={questions}
-        />
-      )}
-
-      {/* Step 3: Answer & Evaluate */}
-      {step === 3 && (
         <>
           <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
                 <h2 className="section-title" style={{ marginBottom: '0.25rem' }}>
-                  🎤 Interview: {selectedRole}
+                  🎤 Interview based on your Resume
                 </h2>
                 <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>
-                  Answer each question and get AI-powered feedback
+                  Skills: {skillsLabel}
                 </p>
               </div>
               <button
@@ -161,7 +159,10 @@ export default function App() {
               </button>
             </div>
           </div>
-          <AnswerEvaluation questions={questions} />
+          <AnswerEvaluation
+            questions={questions}
+            skills={analysisResult?.skills_found || []}
+          />
         </>
       )}
 

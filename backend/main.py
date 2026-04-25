@@ -6,14 +6,17 @@ import os
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 import io
 
 from chains import (
     get_resume_chain, parse_resume_response,
-    get_question_chain, parse_questions_response,
+    parse_questions_response,
     get_evaluation_chain, parse_evaluation_response,
+    get_skill_question_chain,
+    get_followup_chain,
 )
 
 # Load environment variables
@@ -88,39 +91,97 @@ async def analyze_resume(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Error analyzing resume: {str(e)}")
 
 
-# ── Question Generation Endpoint ──────────────────────────────────────────────
 
-class QuestionRequest(BaseModel):
-    role: str
+# ── Skill-Based Question Generation Endpoint ─────────────────────────────────
+
+class SkillQuestionRequest(BaseModel):
+    skills: list[str]
     resume_summary: str
 
 
-@app.post("/api/generate-questions")
-async def generate_questions(request: QuestionRequest):
-    """Generate interview questions for a specific role based on the resume."""
+@app.post("/api/generate-skill-questions")
+async def generate_skill_questions(request: SkillQuestionRequest):
+    """Generate interview questions based on selected skills from the resume."""
     
-    if not request.role.strip():
-        raise HTTPException(status_code=400, detail="Job role is required.")
+    if not request.skills or len(request.skills) == 0:
+        raise HTTPException(status_code=400, detail="At least one skill is required.")
     
     if not request.resume_summary.strip():
         raise HTTPException(status_code=400, detail="Resume summary is required.")
     
     try:
-        chain = get_question_chain()
+        chain = get_skill_question_chain()
+        skills_text = ", ".join(request.skills)
         response = chain.invoke({
-            "role": request.role,
+            "skills": skills_text,
             "resume_summary": request.resume_summary
         })
         questions = parse_questions_response(response)
         
         return {
             "success": True,
-            "role": request.role,
+            "skills": request.skills,
             **questions
         }
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating questions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating skill questions: {str(e)}")
+
+
+# ── Follow-up Question Generation Endpoint ────────────────────────────────────
+
+class FollowupRequest(BaseModel):
+    role: Optional[str] = None
+    skills: Optional[list[str]] = None
+    previous_questions: list[str]
+    start_id: int
+
+
+@app.post("/api/generate-followup-questions")
+async def generate_followup_questions(request: FollowupRequest):
+    """Generate harder follow-up questions. Works for both role-based and skill-based modes."""
+    
+    if not request.role and not request.skills:
+        raise HTTPException(status_code=400, detail="Either role or skills must be provided.")
+    
+    if not request.previous_questions:
+        raise HTTPException(status_code=400, detail="Previous questions are required.")
+    
+    try:
+        # Build context string
+        if request.role:
+            context = f"Job Role: {request.role}"
+        else:
+            context = f"Selected Skills: {', '.join(request.skills)}"
+        
+        # Format previous questions as numbered list
+        prev_qs_text = "\n".join(
+            f"{i+1}. {q}" for i, q in enumerate(request.previous_questions)
+        )
+        
+        # Calculate IDs for the new batch
+        start = request.start_id
+        
+        chain = get_followup_chain()
+        response = chain.invoke({
+            "context": context,
+            "previous_questions": prev_qs_text,
+            "start_id": start,
+            "start_id_plus_1": start + 1,
+            "start_id_plus_2": start + 2,
+            "start_id_plus_3": start + 3,
+            "start_id_plus_4": start + 4,
+            "start_id_plus_5": start + 5,
+        })
+        questions = parse_questions_response(response)
+        
+        return {
+            "success": True,
+            **questions
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating follow-up questions: {str(e)}")
 
 
 # ── Answer Evaluation Endpoint ────────────────────────────────────────────────
@@ -160,3 +221,4 @@ async def evaluate_answer(request: EvaluationRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+

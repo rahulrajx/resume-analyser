@@ -17,16 +17,36 @@ export async function analyzeResume(file) {
   return response.json();
 }
 
-export async function generateQuestions(role, resumeSummary) {
-  const response = await fetch(`${API_BASE}/api/generate-questions`, {
+export async function generateSkillQuestions(skills, resumeSummary) {
+  const response = await fetch(`${API_BASE}/api/generate-skill-questions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role, resume_summary: resumeSummary }),
+    body: JSON.stringify({ skills, resume_summary: resumeSummary }),
   });
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.detail || "Failed to generate questions");
+    throw new Error(error.detail || "Failed to generate skill questions");
+  }
+
+  return response.json();
+}
+
+export async function generateFollowupQuestions(role, skills, previousQuestions, startId) {
+  const response = await fetch(`${API_BASE}/api/generate-followup-questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      role: role || null,
+      skills: skills || null,
+      previous_questions: previousQuestions,
+      start_id: startId,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to generate follow-up questions");
   }
 
   return response.json();
@@ -46,3 +66,4 @@ export async function evaluateAnswer(question, userAnswer) {
 
   return response.json();
 }
+

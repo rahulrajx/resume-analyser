@@ -4,7 +4,6 @@ LangChain chains for Resume Analysis, Question Generation, and Answer Evaluation
 
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 import json
 import re
 
@@ -58,64 +57,7 @@ def parse_resume_response(response):
         raise ValueError("Could not parse resume analysis response")
 
 
-# ── Question Generation Chain ─────────────────────────────────────────────────
-
-QUESTION_GENERATION_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", """You are an expert technical interviewer and hiring manager.
-Based on the candidate's resume and the target job role, generate relevant interview questions.
-
-Generate exactly 5 interview questions that:
-1. Are specific to the job role
-2. Test both technical skills and behavioral competencies
-3. Are relevant to the candidate's background from their resume
-4. Range from moderate to challenging difficulty
-
-You MUST respond with valid JSON in exactly this format:
-{{
-    "questions": [
-        {{
-            "id": 1,
-            "question": "<the interview question>",
-            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
-            "difficulty": "<Medium | Hard>"
-        }},
-        {{
-            "id": 2,
-            "question": "<the interview question>",
-            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
-            "difficulty": "<Medium | Hard>"
-        }},
-        {{
-            "id": 3,
-            "question": "<the interview question>",
-            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
-            "difficulty": "<Medium | Hard>"
-        }},
-        {{
-            "id": 4,
-            "question": "<the interview question>",
-            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
-            "difficulty": "<Medium | Hard>"
-        }},
-        {{
-            "id": 5,
-            "question": "<the interview question>",
-            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
-            "difficulty": "<Medium | Hard>"
-        }}
-    ]
-}}
-
-Respond ONLY with the JSON object. No other text."""),
-    ("human", "Job Role: {role}\n\nCandidate Resume Summary: {resume_summary}")
-])
-
-
-def get_question_chain():
-    llm = get_llm(temperature=0.7)
-    chain = QUESTION_GENERATION_PROMPT | llm
-    return chain
-
+# ── Shared JSON Parser ────────────────────────────────────────────────────────
 
 def parse_questions_response(response):
     """Parse the LLM response into structured data."""
@@ -127,6 +69,157 @@ def parse_questions_response(response):
         if json_match:
             return json.loads(json_match.group())
         raise ValueError("Could not parse questions response")
+
+
+# ── Skill-Based Question Generation Chain ─────────────────────────────────────
+
+SKILL_QUESTION_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """You are an expert technical interviewer.
+Based on the candidate's selected skills, generate targeted interview questions
+with PROGRESSIVE DIFFICULTY — starting easy and building up to hard.
+
+Generate exactly 6 interview questions in this exact difficulty order:
+- Question 1: Very Easy — A basic definition or "What is X?" question about one of the skills
+- Question 2: Easy — A fundamental concept question about one of the skills
+- Question 3: Easy — Simple applied knowledge combining skills
+- Question 4: Medium — Scenario-based / practical application of the skills
+- Question 5: Medium — Applied problem-solving using the skills together
+- Question 6: Hard — Deep technical / architecture question involving the skills
+
+All questions must:
+1. Be directly related to the selected skills
+2. Test practical, real-world knowledge
+3. Cover different skills across the questions when possible
+
+You MUST respond with valid JSON in exactly this format:
+{{
+    "questions": [
+        {{
+            "id": 1,
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Very Easy"
+        }},
+        {{
+            "id": 2,
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Easy"
+        }},
+        {{
+            "id": 3,
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Easy"
+        }},
+        {{
+            "id": 4,
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Medium"
+        }},
+        {{
+            "id": 5,
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Medium"
+        }},
+        {{
+            "id": 6,
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Hard"
+        }}
+    ]
+}}
+
+Respond ONLY with the JSON object. No other text."""),
+    ("human", "Selected Skills: {skills}\n\nCandidate Resume Summary: {resume_summary}")
+])
+
+
+def get_skill_question_chain():
+    llm = get_llm(temperature=0.7)
+    chain = SKILL_QUESTION_PROMPT | llm
+    return chain
+
+
+# ── Follow-up Question Generation Chain ────────────────────────────────────────
+
+FOLLOWUP_QUESTION_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """You are an expert technical interviewer.
+The candidate has already answered a set of interview questions and wants more practice.
+Generate 6 follow-up questions covering a range of difficulties.
+
+Generate exactly 6 questions in this difficulty split:
+- Question 1: Easy — A fundamental concept or definition question
+- Question 2: Easy — Applied basics
+- Question 3: Medium — Scenario-based / practical application
+- Question 4: Medium — Applied problem-solving
+- Question 5: Hard — Deep technical / architecture question
+- Question 6: Hard — Complex system design or advanced problem
+
+The questions must:
+1. Be relevant to the context provided (job role or skills)
+2. NOT repeat or closely resemble the previous questions
+3. Cover different topics/skills than previously asked
+
+You MUST respond with valid JSON in exactly this format:
+{{
+    "questions": [
+        {{
+            "id": {start_id},
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Easy"
+        }},
+        {{
+            "id": {start_id_plus_1},
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Easy"
+        }},
+        {{
+            "id": {start_id_plus_2},
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Medium"
+        }},
+        {{
+            "id": {start_id_plus_3},
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Medium"
+        }},
+        {{
+            "id": {start_id_plus_4},
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Hard"
+        }},
+        {{
+            "id": {start_id_plus_5},
+            "question": "<the interview question>",
+            "category": "<Technical | Behavioral | Situational | Problem-Solving>",
+            "difficulty": "Hard"
+        }}
+    ]
+}}
+
+Respond ONLY with the JSON object. No other text."""),
+    ("human", """Context: {context}
+
+Previous questions already asked (do NOT repeat these):
+{previous_questions}
+
+Generate 6 new, harder follow-up questions.""")
+])
+
+
+def get_followup_chain():
+    llm = get_llm(temperature=0.7)
+    chain = FOLLOWUP_QUESTION_PROMPT | llm
+    return chain
 
 
 # ── Answer Evaluation Chain ───────────────────────────────────────────────────
