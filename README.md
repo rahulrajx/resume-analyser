@@ -1,12 +1,18 @@
-# 🧠 AI Resume Analyser & Interview Prep
+# 🧠 AI Mock Interview Simulator
 
-An AI-powered web app that analyzes resumes, generates tailored interview questions, and evaluates your answers — all powered by OpenAI's GPT-4o-mini via LangChain.
+An AI-powered web app that analyzes resumes, conducts multi-round mock interviews, evaluates answers with AI feedback, and generates a final report card — all powered by Groq's Llama 3.3 70B via LangChain.
 
 ## ✨ Features
 
 - **📄 Resume Analysis** — Upload a PDF resume and get an AI-powered score, strengths, weaknesses, skills breakdown, and actionable suggestions.
-- **🎯 Interview Prep** — Select a target job role and receive 5 tailored interview questions based on your resume.
-- **✅ Answer Evaluation** — Type your answers and get scored (1–10) with detailed feedback and a model answer.
+- **👋 Introduction Round** — 4 conversational questions covering self-intro, motivation, strengths, and career goals.
+- **💻 Technical Round** — 6 skill-based questions with progressive difficulty, plus "Load More" for extra practice.
+- **🤝 Behavioral Round** — 4 STAR-method situational questions (teamwork, pressure, conflict, failure).
+- **✅ Answer Evaluation** — Get scored (1–10) with detailed feedback and a model answer for every question.
+- **🤷 Skip / "I Don't Know"** — Can't answer? Skip to see the AI-generated ideal answer.
+- **⏱️ Round Timer** — Countdown timer per round with auto-submit. Toggle off for practice mode.
+- **🎤 Voice Mode** — Record answers via microphone, transcribed by Groq Whisper STT.
+- **📋 Report Card** — Final dashboard with per-round scores, overall verdict, strengths, and areas to improve. Download as PDF.
 
 ## 🛠️ Tech Stack
 
@@ -14,7 +20,8 @@ An AI-powered web app that analyzes resumes, generates tailored interview questi
 |----------|-------------------------------------|
 | Frontend | React 19, Vite 8                    |
 | Backend  | Python, FastAPI, Uvicorn            |
-| AI/LLM   | LangChain, Groq LPU (Llama 3.3 70B)|
+| AI (LLM) | LangChain + Groq Llama 3.3 70B    |
+| AI (STT) | Groq Whisper (`whisper-large-v3-turbo`) |
 | PDF      | PyPDF2                              |
 
 ## 📁 Project Structure
@@ -22,25 +29,27 @@ An AI-powered web app that analyzes resumes, generates tailored interview questi
 ```
 resume analysier/
 ├── backend/
-│   ├── main.py              # FastAPI server (3 API endpoints)
+│   ├── main.py              # FastAPI server (8 API endpoints)
 │   ├── chains.py            # LangChain chains & prompt templates
 │   ├── requirements.txt     # Python dependencies
 │   ├── .env                 # Environment variables (not committed)
 │   └── .env.example         # Template for .env setup
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx          # Main app with 3-step flow
-│   │   ├── api.js           # API service layer
+│   │   ├── App.jsx          # Main app with 5-step multi-round flow
+│   │   ├── api.js           # API service layer (8 functions)
 │   │   ├── index.css        # Full design system (dark theme)
+│   │   ├── main.jsx         # React entry point
 │   │   └── components/
 │   │       ├── ResumeUpload.jsx      # PDF upload with drag & drop
 │   │       ├── ResumeAnalysis.jsx    # Score gauge & analysis cards
-│   │       ├── InterviewPrep.jsx     # Role selector & question gen
-│   │       └── AnswerEvaluation.jsx  # Answer input & AI feedback
+│   │       ├── AnswerEvaluation.jsx  # Answer input, voice mode, timer, skip/IDK
+│   │       └── ReportCard.jsx        # Final interview report card
 │   ├── index.html
 │   ├── vite.config.js
 │   └── package.json
 ├── .gitignore
+├── future_plan.md
 └── README.md
 ```
 
@@ -76,7 +85,7 @@ pip install -r backend/requirements.txt
 
 # Configure environment variables
 cp backend/.env.example backend/.env
-# Edit backend/.env and add your OpenAI API key
+# Edit backend/.env and add your Groq API key
 ```
 
 ### 3. Frontend Setup
@@ -109,18 +118,25 @@ npm run dev
 1. Open http://localhost:5173 in your browser
 2. Upload a PDF resume
 3. Review the AI analysis (score, strengths, weaknesses, skills)
-4. Select a target job role
-5. Answer the generated interview questions
-6. Get AI-powered feedback on your answers
+4. Click **Start Mock Interview**
+5. Complete 3 rounds: Introduction → Technical → Behavioral
+6. Use the timer, voice mode, or skip questions as needed
+7. View your **Report Card** with scores and verdict
+8. Download the report as PDF or retake the interview
 
 ## 📡 API Endpoints
 
-| Method | Endpoint                  | Description                     |
-|--------|---------------------------|---------------------------------|
-| GET    | `/`                       | Health check                    |
-| POST   | `/api/analyze-resume`     | Upload PDF, get analysis        |
-| POST   | `/api/generate-questions` | Generate interview questions    |
-| POST   | `/api/evaluate-answer`    | Evaluate a candidate's answer   |
+| Method | Endpoint                              | Description                           |
+|--------|---------------------------------------|---------------------------------------|
+| GET    | `/`                                   | Health check                          |
+| POST   | `/api/analyze-resume`                 | Upload PDF, get AI analysis           |
+| POST   | `/api/generate-introduction-questions`| Generate introduction round questions |
+| POST   | `/api/generate-skill-questions`       | Generate technical round questions    |
+| POST   | `/api/generate-behavioral-questions`  | Generate behavioral round questions   |
+
+| POST   | `/api/evaluate-answer`                | Evaluate a candidate's answer         |
+| POST   | `/api/get-model-answer`               | Get ideal answer (skip/IDK)           |
+| POST   | `/api/transcribe`                     | Speech-to-text via Groq Whisper       |
 
 ## 📝 License
 

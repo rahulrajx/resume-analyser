@@ -32,25 +32,7 @@ export async function generateSkillQuestions(skills, resumeSummary) {
   return response.json();
 }
 
-export async function generateFollowupQuestions(role, skills, previousQuestions, startId) {
-  const response = await fetch(`${API_BASE}/api/generate-followup-questions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      role: role || null,
-      skills: skills || null,
-      previous_questions: previousQuestions,
-      start_id: startId,
-    }),
-  });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || "Failed to generate follow-up questions");
-  }
-
-  return response.json();
-}
 
 export async function evaluateAnswer(question, userAnswer) {
   const response = await fetch(`${API_BASE}/api/evaluate-answer`, {
@@ -67,3 +49,68 @@ export async function evaluateAnswer(question, userAnswer) {
   return response.json();
 }
 
+
+export async function transcribeAudio(audioBlob) {
+  const formData = new FormData();
+  formData.append("file", audioBlob, "recording.webm");
+
+  const response = await fetch(`${API_BASE}/api/transcribe`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to transcribe audio");
+  }
+
+  return response.json();
+}
+
+
+export async function generateIntroductionQuestions(resumeSummary) {
+  const response = await fetch(`${API_BASE}/api/generate-introduction-questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resume_summary: resumeSummary }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to generate introduction questions");
+  }
+
+  return response.json();
+}
+
+
+export async function generateBehavioralQuestions(resumeSummary) {
+  const response = await fetch(`${API_BASE}/api/generate-behavioral-questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resume_summary: resumeSummary }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to generate behavioral questions");
+  }
+
+  return response.json();
+}
+
+
+export async function getModelAnswer(question) {
+  const response = await fetch(`${API_BASE}/api/get-model-answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "Failed to generate model answer");
+  }
+
+  return response.json();
+}

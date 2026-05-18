@@ -5,18 +5,22 @@ FastAPI backend for AI Resume Analyser & Interview Prep.
 import os
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
 from pydantic import BaseModel
-from typing import Optional
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
+from groq import Groq
 import io
+import random
 
 from chains import (
     get_resume_chain, parse_resume_response,
     parse_questions_response,
     get_evaluation_chain, parse_evaluation_response,
     get_skill_question_chain,
-    get_followup_chain,
+    get_introduction_chain,
+    get_behavioral_chain,
+    get_model_answer_chain,
 )
 
 # Load environment variables
@@ -36,11 +40,14 @@ app = FastAPI(
 # CORS — allow React dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:3000", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Groq client for direct audio API access (STT)
+groq_client = Groq()
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────
@@ -114,7 +121,8 @@ async def generate_skill_questions(request: SkillQuestionRequest):
         skills_text = ", ".join(request.skills)
         response = chain.invoke({
             "skills": skills_text,
-            "resume_summary": request.resume_summary
+            "resume_summary": request.resume_summary,
+            "session_seed": random.randint(1000, 9999)
         })
         questions = parse_questions_response(response)
         
@@ -127,61 +135,6 @@ async def generate_skill_questions(request: SkillQuestionRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating skill questions: {str(e)}")
 
-
-# ── Follow-up Question Generation Endpoint ────────────────────────────────────
-
-class FollowupRequest(BaseModel):
-    role: Optional[str] = None
-    skills: Optional[list[str]] = None
-    previous_questions: list[str]
-    start_id: int
-
-
-@app.post("/api/generate-followup-questions")
-async def generate_followup_questions(request: FollowupRequest):
-    """Generate harder follow-up questions. Works for both role-based and skill-based modes."""
-    
-    if not request.role and not request.skills:
-        raise HTTPException(status_code=400, detail="Either role or skills must be provided.")
-    
-    if not request.previous_questions:
-        raise HTTPException(status_code=400, detail="Previous questions are required.")
-    
-    try:
-        # Build context string
-        if request.role:
-            context = f"Job Role: {request.role}"
-        else:
-            context = f"Selected Skills: {', '.join(request.skills)}"
-        
-        # Format previous questions as numbered list
-        prev_qs_text = "\n".join(
-            f"{i+1}. {q}" for i, q in enumerate(request.previous_questions)
-        )
-        
-        # Calculate IDs for the new batch
-        start = request.start_id
-        
-        chain = get_followup_chain()
-        response = chain.invoke({
-            "context": context,
-            "previous_questions": prev_qs_text,
-            "start_id": start,
-            "start_id_plus_1": start + 1,
-            "start_id_plus_2": start + 2,
-            "start_id_plus_3": start + 3,
-            "start_id_plus_4": start + 4,
-            "start_id_plus_5": start + 5,
-        })
-        questions = parse_questions_response(response)
-        
-        return {
-            "success": True,
-            **questions
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating follow-up questions: {str(e)}")
 
 
 # ── Answer Evaluation Endpoint ────────────────────────────────────────────────
@@ -216,6 +169,108 @@ async def evaluate_answer(request: EvaluationRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error evaluating answer: {str(e)}")
+
+
+# ── Introduction Questions Endpoint ───────────────────────────────────────────
+
+class IntroductionRequest(BaseModel):
+    resume_summary: str
+
+
+@app.post("/api/generate-introduction-questions")
+async def generate_introduction_questions(request: IntroductionRequest):
+    """Generate introduction round questions based on resume."""
+    
+    if not request.resume_summary.strip():
+        raise HTTPException(status_code=400, detail="Resume summary is required.")
+    
+    try:
+        chain = get_introduction_chain()
+        response = chain.invoke({"resume_summary": request.resume_summary, "session_seed": random.randint(1000, 9999)})
+        questions = parse_questions_response(response)
+        return {"success": True, **questions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating introduction questions: {str(e)}")
+
+
+# ── Behavioral Questions Endpoint ─────────────────────────────────────────────
+
+class BehavioralRequest(BaseModel):
+    resume_summary: str
+
+
+@app.post("/api/generate-behavioral-questions")
+async def generate_behavioral_questions(request: BehavioralRequest):
+    """Generate behavioral/STAR round questions based on resume."""
+    
+    if not request.resume_summary.strip():
+        raise HTTPException(status_code=400, detail="Resume summary is required.")
+    
+    try:
+        chain = get_behavioral_chain()
+        response = chain.invoke({"resume_summary": request.resume_summary, "session_seed": random.randint(1000, 9999)})
+        questions = parse_questions_response(response)
+        return {"success": True, **questions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating behavioral questions: {str(e)}")
+
+
+# ── Model Answer Endpoint (Skip / I Don't Know) ──────────────────────────────
+
+class ModelAnswerRequest(BaseModel):
+    question: str
+
+
+@app.post("/api/get-model-answer")
+async def get_model_answer(request: ModelAnswerRequest):
+    """Generate an ideal model answer for a question (used when user skips)."""
+    
+    if not request.question.strip():
+        raise HTTPException(status_code=400, detail="Question is required.")
+    
+    try:
+        chain = get_model_answer_chain()
+        response = chain.invoke({"question": request.question})
+        result = parse_questions_response(response)
+        return {"success": True, **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating model answer: {str(e)}")
+
+
+# ── Voice Mode: Speech-to-Text (Transcribe) ──────────────────────────────────
+
+@app.post("/api/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    """Transcribe an audio file to text using Groq Whisper."""
+    
+    try:
+        audio_bytes = await file.read()
+        
+        if not audio_bytes:
+            raise HTTPException(status_code=400, detail="Empty audio file.")
+        
+        # Use Groq Whisper for ultra-fast STT
+        # whisper-large-v3-turbo handles webm/ogg from browser MediaRecorder
+        transcription = groq_client.audio.transcriptions.create(
+            file=(file.filename or "audio.webm", audio_bytes),
+            model="whisper-large-v3-turbo",
+            response_format="verbose_json",
+            language="en",
+        )
+        
+        text = transcription.text.strip() if hasattr(transcription, 'text') else str(transcription).strip()
+        
+        if not text:
+            return {"success": True, "text": "", "message": "No speech detected."}
+        
+        return {"success": True, "text": text}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error transcribing audio: {str(e)}")
+
+
 
 
 if __name__ == "__main__":
